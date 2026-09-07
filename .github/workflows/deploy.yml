@@ -1,33 +1,80 @@
-name: Deploy nni001 (Automatizaciones SomosIM)
+name: 🚀 CI/CD Pipeline (NNI001 - Automatizaciones)
 
 on:
   push:
     branches:
       - develop
       - main
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'docs/**'
+  pull_request:
+    branches:
+      - develop
+      - main
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'docs/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  deploy:
+  ci:
+    name: 🧪 CI - Compose & Config Check
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - name: Checkout code
+      - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Deploy to VPS
+      - name: 🐳 Validate Docker Compose Files
+        run: |
+          docker compose -f compose.dev.yml config -q
+          docker compose -f compose.prod.yml config -q
+          echo "✅ Docker Compose configs para n8n validadas con éxito."
+
+  deploy:
+    name: 🚀 Deploy to VPS
+    needs: ci
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 📦 Sync files to VPS via SSH
+        uses: easingthemes/ssh-deploy@v5.1.0
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY }}
+          REMOTE_HOST: ${{ secrets.VPS_HOST }}
+          REMOTE_USER: ${{ secrets.VPS_USER }}
+          REMOTE_PORT: ${{ secrets.VPS_PORT }}
+          SOURCE: "./"
+          TARGET: ${{ github.ref_name == 'develop' && '/srv/somosim/ni001d' || '/srv/somosim/ni001' }}
+          ARGS: "-rlgoDzvc -i --delete"
+          EXCLUDE: "/.git/, /.env.dev, /.env.prod"
+
+      - name: 🐳 Rebuild & Up Docker Compose on VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
-          port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
           script: |
-            if [ "${{ github.ref }}" = "refs/heads/develop" ]; then
-              TARGET_DIR="/srv/somosim/ni001d"
+            set -e
+            if [ "${{ github.ref_name }}" = "develop" ]; then
+              cd /srv/somosim/ni001d
+              docker compose -f compose.dev.yml up -d --remove-orphans
             else
-              TARGET_DIR="/srv/somosim/ni001"
+              cd /srv/somosim/ni001
+              docker compose -f compose.prod.yml up -d --remove-orphans
             fi
-            
-            echo "🚀 Desplegando en $TARGET_DIR..."
-            mkdir -p "$TARGET_DIR"
-            cd "$TARGET_DIR"
-            docker compose up -d
+            echo "✅ Despliegue de Automatizaciones n8n (${{ github.ref_name }}) completado con éxito."

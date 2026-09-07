@@ -1,0 +1,69 @@
+name: ni001
+
+services:
+  dni001:
+    container_name: dni001
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-db_ni001}
+      POSTGRES_USER: ${POSTGRES_USER:-n8n_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-n8n_prod_secret_2026}
+    volumes:
+      - dni001-data:/var/lib/postgresql/data
+    networks:
+      - ni001-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-n8n_admin} -d ${POSTGRES_DB:-db_ni001}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  nni001:
+    container_name: nni001
+    image: n8nio/n8n:latest
+    restart: always
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=dni001
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB:-db_ni001}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER:-n8n_admin}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD:-n8n_prod_secret_2026}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-n8n_encryption_secret_prod_2026}
+      - GENERIC_TIMEZONE=America/Mexico_City
+      - TZ=America/Mexico_City
+      - N8N_HOST=nni001.somosim.mx
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL=https://nni001.somosim.mx/
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=336
+    volumes:
+      - nni001-data:/home/node/.n8n
+    networks:
+      - ni001-net
+      - traefik_web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nni001.rule=Host(`nni001.somosim.mx`)"
+      - "traefik.http.routers.nni001.entrypoints=websecure"
+      - "traefik.http.routers.nni001.tls=true"
+      - "traefik.http.routers.nni001.tls.certresolver=myresolver"
+      - "traefik.http.services.nni001.loadbalancer.server.port=5678"
+    depends_on:
+      dni001:
+        condition: service_healthy
+
+networks:
+  ni001-net:
+    driver: bridge
+  traefik_web:
+    external: true
+
+volumes:
+  dni001-data:
+    driver: local
+  nni001-data:
+    driver: local

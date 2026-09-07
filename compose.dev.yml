@@ -1,0 +1,63 @@
+name: ni001d
+
+services:
+  dni001d:
+    container_name: dni001d
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-db_ni001d}
+      POSTGRES_USER: ${POSTGRES_USER:-n8n_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-n8n_dev_secret_2026}
+    volumes:
+      - dni001d-data:/var/lib/postgresql/data
+    networks:
+      - ni001d-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-n8n_admin} -d ${POSTGRES_DB:-db_ni001d}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  nni001d:
+    container_name: nni001d
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=dni001d
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB:-db_ni001d}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER:-n8n_admin}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD:-n8n_dev_secret_2026}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-n8n_encryption_secret_dev_2026}
+      - GENERIC_TIMEZONE=America/Mexico_City
+      - TZ=America/Mexico_City
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=168
+    volumes:
+      - nni001d-data:/home/node/.n8n
+    networks:
+      - ni001d-net
+    depends_on:
+      dni001d:
+        condition: service_healthy
+
+networks:
+  ni001d-net:
+    name: ni001d-net
+
+volumes:
+  dni001d-data:
+    name: dni001d-data
+  nni001d-data:
+    name: nni001d-data
